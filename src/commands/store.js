@@ -112,7 +112,6 @@ async function storeWasm(archwayd, config, { instantiateAnyofAddresses, project:
   }
 
   // eslint-disable-next-line camelcase 
-  //here
   const { code, raw_log: rawLog, txhash } = await archwayd.tx.wasm('store', [relativeWasmPath], { from, chainId, node, ...options });
   if (code && code !== 0) {
     throw new Error(`Transaction failed: code=${code}, ${rawLog}`);
