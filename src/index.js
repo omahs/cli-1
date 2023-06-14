@@ -237,6 +237,7 @@ program
   .option('--no-store', 'Do not upload the wasm file on-chain (uses the latest version on config.json)', true)
   .option('--no-verify', 'Do not verify the wasm file uploaded on-chain', true)
   .option('--no-confirm', 'Skip tx broadcasting prompt confirmation')
+  .option('--instantiate-anyof-addresses <value>', 'Comma separated list of addresses allowed to instantiate the wasm file')
   .addOption(DockerOption)
   .action(async ({ ...options }) => {
     options = await updateWithDockerOptions(options);

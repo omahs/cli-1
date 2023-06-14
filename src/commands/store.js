@@ -96,8 +96,12 @@ async function verifyUploadedWasm(
  * @param {ArchwayClient} archwayd
  * @param {Config} config
  */
-async function storeWasm(archwayd, config, { project: { name: projectName, wasm: { optimizedFilePath } = {}, workspaceRoot } = {}, from, chainId, node, ...options } = {}) {
+async function storeWasm(archwayd, config, { instantiateAnyofAddresses, project: { name: projectName, wasm: { optimizedFilePath } = {}, workspaceRoot } = {}, from, chainId, node, ...options } = {}) {
   console.info(chalk`Uploading optimized wasm to {cyan ${chainId}} using wallet {cyan ${from}}...`);
+
+  instantiateAddresses = (instantiateAnyofAddresses) ? ['--instantiate-anyof-addresses',instantiateAnyofAddresses] : [];
+  if (instantiateAddresses.length) options.flags = [...options.flags,...instantiateAddresses];
+  console.log('options?',options);
 
   const relativeWasmPath = path.relative(workspaceRoot, optimizedFilePath);
   const resolvedWasmPath = path.join(archwayd.workingDir, relativeWasmPath);
@@ -107,7 +111,8 @@ async function storeWasm(archwayd, config, { project: { name: projectName, wasm:
     await copyFile(optimizedFilePath, resolvedWasmPath);
   }
 
-  // eslint-disable-next-line camelcase
+  // eslint-disable-next-line camelcase 
+  //here
   const { code, raw_log: rawLog, txhash } = await archwayd.tx.wasm('store', [relativeWasmPath], { from, chainId, node, ...options });
   if (code && code !== 0) {
     throw new Error(`Transaction failed: code=${code}, ${rawLog}`);
