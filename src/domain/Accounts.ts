@@ -1,22 +1,10 @@
-import ow from 'ow';
 import { Coin, StargateClient } from '@cosmjs/stargate';
 
-import { InvalidFormatError, NotFoundError } from '@/exceptions';
+import { NotFoundError } from '@/exceptions';
 import { FileKeystore, KeystoreBackend, OsKeystore, TestKeystore } from '@/domain';
 import { assertIsValidAddress, bold, yellow } from '@/utils';
 
-import {
-  Account,
-  AccountBalancesJSON,
-  AccountBase,
-  AccountType,
-  AccountWithSigner,
-  AccountsParams,
-  BackendType,
-  PublicKey,
-  accountValidator,
-  accountWithMnemonicValidator,
-} from '@/types';
+import { Account, AccountBalancesJSON, AccountBase, AccountType, AccountWithSigner, AccountsParams, BackendType, PublicKey } from '@/types';
 
 export const SECRET_SERVICE_NAME = 'io.archway.cli';
 export const KEY_FILES_PATH = `${process.env.HOME}/atest`;
@@ -64,27 +52,6 @@ export class Accounts {
 
     return new Accounts(keystore);
   }
-
-  /**
-   * Verify if an object has the valid format of a {@link Account} (including the mnemonic except for ledger accounts), throws error if not
-   *
-   * @param data - Object instance to validate
-   * @param name - Optional - Name of the account, will be used in the possible error
-   * @returns void
-   */
-  static assertIsValidAccountWithMnemonic = (data: unknown, name?: string): void => {
-    if (!this.isValidAccountWithMnemonic(data)) throw new InvalidFormatError(name || 'Account');
-  };
-
-  /**
-   * Verify if an object has the valid format of a {@link Account} (including mnemonic, except for ledger accounts)
-   *
-   * @param data - Object instance to validate
-   * @returns Boolean, whether it is valid or not
-   */
-  static isValidAccountWithMnemonic = (data: unknown): boolean => {
-    return (data as any).type === AccountType.LEDGER ? ow.isValid(data, accountValidator) : ow.isValid(data, accountWithMnemonicValidator);
-  };
 
   /**
    * Get a formatted version of the public key
@@ -138,10 +105,11 @@ export class Accounts {
    * Get a single account by name or address with its signer, throws error if not found
    *
    * @param nameOrAddress - Account name or account address to search by
+   * @param prefix - Optional - Bech 32 prefix for the address, defaults to 'archway'
    * @returns Promise containing an instance of {@link AccountWithSigner}
    */
-  async getWithSigner(nameOrAddress: string): Promise<AccountWithSigner> {
-    const account = await this.keystore.getWithSigner(nameOrAddress);
+  async getWithSigner(nameOrAddress: string, prefix = DEFAULT_ADDRESS_BECH_32_PREFIX): Promise<AccountWithSigner> {
+    const account = await this.keystore.getWithSigner(nameOrAddress, prefix);
 
     if (!account) throw new NotFoundError('Account', nameOrAddress);
 
@@ -199,12 +167,13 @@ export class Accounts {
    * Create an instance of {@link AccountBase} from an address, getting the name if found in keyring
    *
    * @param address - Account address to search by
+   * @param prefix - Optional - Bech 32 prefix for the address, defaults to 'archway'
    * @returns Promise containing an instance of {@link AccountBase}
    */
-  async accountBaseFromAddress(address: string): Promise<AccountBase> {
+  async accountBaseFromAddress(address: string, prefix = DEFAULT_ADDRESS_BECH_32_PREFIX): Promise<AccountBase> {
     const found = await this.keystore.findNameAndAddressInList(address);
 
-    if (!found) assertIsValidAddress(address, DEFAULT_ADDRESS_BECH_32_PREFIX);
+    if (!found) assertIsValidAddress(address, prefix);
 
     return {
       name: found?.name || '',
