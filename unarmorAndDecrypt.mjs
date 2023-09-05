@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import * as openpgp from 'openpgp';
 import * as bcrypt from 'bcrypt';
 import nacl from 'tweetnacl';
+import sha256 from 'sha256';
 
 // Base 64 implementation with custom alphabet to match bcrypt received encoding
 const b64ch = './ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789=';
@@ -78,8 +79,8 @@ const formattedSalt = `$2a$10$${btoaPolyfill(saltString)}`;
 const generatedKey = await bcrypt.hash(password, formattedSalt);
 console.log('Generated key', generatedKey)
 
-// Remove prefix for getting the generated intermediate key
-const keyBytes = new Uint8Array(atobPolyfill(generatedKey));
+// Get 32 bytes version of key with sha256 hashing
+const keyBytes = new Uint8Array(sha256(new Uint8Array(atobPolyfill(generatedKey)), { asBytes: true }));
 console.log(keyBytes)
 
 // Cut only the required sizes for the box, nonce and key
