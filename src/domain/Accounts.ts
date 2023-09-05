@@ -1,4 +1,5 @@
 import { Coin, StargateClient } from '@cosmjs/stargate';
+import { HdPath } from '@cosmjs/crypto';
 
 import { NotFoundError } from '@/exceptions';
 import { FileKeystore, KeystoreBackend, OsKeystore, TestKeystore } from '@/domain';
@@ -80,11 +81,12 @@ export class Accounts {
    *
    * @param name - Account name
    * @param type - {@link AccountType} value
-   * @param mnemonic - Optional - 24 word mnemonic to use in the new account
+   * @param mnemonicOrPrivateKey - Optional - Existing mnemonic or private key to use for the new account
+   * @param hdPath - Optional - HD path of the account
    * @returns Promise containing an instance of {@link Account}
    */
-  async new(name: string, type: AccountType, mnemonic?: string): Promise<Account> {
-    return this._keystore.add(name, type, mnemonic);
+  async new(name: string, type: AccountType, mnemonicOrPrivateKey?: string, hdPath?: HdPath): Promise<Account> {
+    return this._keystore.add(name, type, mnemonicOrPrivateKey, hdPath);
   }
 
   /**

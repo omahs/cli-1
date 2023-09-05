@@ -1,6 +1,6 @@
 import { DirectSecp256k1HdWallet, DirectSecp256k1Wallet } from '@cosmjs/proto-signing';
 import { fromBase64, toBase64 } from '@cosmjs/encoding';
-import { Bip39, EnglishMnemonic, Slip10, Slip10Curve } from '@cosmjs/crypto';
+import { Bip39, EnglishMnemonic, HdPath, Slip10, Slip10Curve } from '@cosmjs/crypto';
 import ow from 'ow';
 
 import { DEFAULT_ADDRESS_BECH_32_PREFIX, ENTRY_SUFFIX, ENTRY_TAG_SEPARATOR, Ledger } from '@/domain';
@@ -27,9 +27,10 @@ export abstract class KeystoreBackend {
    * @param name - Name of the new account
    * @param type - ${@link AccountType} of the new account
    * @param mnemonic - Optional - Mnemonic of the account
+   * @param hdPath - Optional - HD path of the account, Defaults to 0/0/0/0
    * @returns Promise containing the newly created account data
    */
-  abstract add(name: string, type: AccountType, mnemonic?: string): Promise<Account>;
+  abstract add(name: string, type: AccountType, mnemonic?: string, hdPath?: HdPath): Promise<Account>;
 
   /**
    * Get a list of the accounts in the keystore, only getting their basic info
@@ -118,7 +119,8 @@ export abstract class KeystoreBackend {
    *
    * @param name - Account name
    * @param type - {@link AccountType} value
-   * @param mnemonicOrPrivateKey - Optional - Existing {@link Account} to be validated
+   * @param mnemonicOrPrivateKey - Optional - Existing mnemonic or private key to use
+   * @param hdPath - Optional - HD path of the account, Defaults to 0/0/0/0
    * @param prefix - Optional - Bech 32 prefix for the generated address, defaults to 'archway'
    * @returns Promise containing the {@link Account}
    */
@@ -127,7 +129,8 @@ export abstract class KeystoreBackend {
     name: string,
     type: AccountType,
     mnemonicOrPrivateKey?: string,
-    prefix = DEFAULT_ADDRESS_BECH_32_PREFIX
+    hdPath = makeCosmosDerivationPath(),
+    prefix = DEFAULT_ADDRESS_BECH_32_PREFIX,
   ): Promise<Account> {
     let result: Account;
 
@@ -136,13 +139,13 @@ export abstract class KeystoreBackend {
     } else {
       const hdWallet = await (mnemonicOrPrivateKey ?
         (mnemonicOrPrivateKey.includes(' ') ?
-          DirectSecp256k1HdWallet.fromMnemonic(mnemonicOrPrivateKey, { prefix }) :
+          DirectSecp256k1HdWallet.fromMnemonic(mnemonicOrPrivateKey, { prefix, hdPaths: [hdPath] }) :
           undefined) :
-        DirectSecp256k1HdWallet.generate(24, { prefix }));
+        DirectSecp256k1HdWallet.generate(24, { prefix, hdPaths: [hdPath] }));
 
       const mnemonic = hdWallet?.mnemonic;
 
-      const privateKey = mnemonic ? await this.convertMnemonicToPrivateKey(mnemonic) : mnemonicOrPrivateKey!;
+      const privateKey = mnemonic ? await this.convertMnemonicToPrivateKey(mnemonic, hdPath) : mnemonicOrPrivateKey!;
 
       const wallet = await DirectSecp256k1Wallet.fromKey(fromBase64(privateKey), prefix);
 
