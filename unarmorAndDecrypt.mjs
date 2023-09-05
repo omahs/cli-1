@@ -20,7 +20,7 @@ const btoaPolyfill = bin => {
   let c2;
   let asc = '';
   const pad = bin.length % 3;
-  for (let i = 0; i < bin.length;) {
+  for (let i = 0; i < bin.length; ) {
     if ((c0 = bin.charCodeAt(i++)) > 255 || (c1 = bin.charCodeAt(i++)) > 255 || (c2 = bin.charCodeAt(i++)) > 255)
       throw new TypeError('invalid character found');
     u32 = (c0 << 16) | (c1 << 8) | c2;
@@ -38,7 +38,7 @@ const atobPolyfill = asc => {
   let bin = [];
   let r1;
   let r2;
-  for (let i = 0; i < asc.length;) {
+  for (let i = 0; i < asc.length; ) {
     u24 =
       (b64tab[asc.charAt(i++)] << 18) |
       (b64tab[asc.charAt(i++)] << 12) |
@@ -75,11 +75,13 @@ const saltString = String.fromCharCode(...saltBytes);
 // Add prefix for format required on bcrypt library
 const formattedSalt = `$2a$10$${btoaPolyfill(saltString)}`;
 
-const key = await bcrypt.hash(password, formattedSalt);
+const generatedKey = await bcrypt.hash(password, formattedSalt);
+console.log('Generated key', generatedKey)
 
 // Remove prefix for getting the generated intermediate key
-const keyBytes = new Uint8Array(atobPolyfill(key.slice(7)));
+const keyBytes = new Uint8Array(atobPolyfill(generatedKey));
+console.log(keyBytes)
 
-// Cut only the required sizes for nonce and key
-const finalResult = nacl.secretbox.open(res.data, res.data.slice(0, 24), keyBytes.slice(0, 32));
+// Cut only the required sizes for the box, nonce and key
+const finalResult = nacl.secretbox.open(new Uint8Array(res.data.slice(24)), new Uint8Array(res.data.slice(0, 24)), keyBytes.slice(0, 32));
 console.log(finalResult);
