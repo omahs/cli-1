@@ -1,11 +1,22 @@
-import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
-import { toBase64 } from '@cosmjs/encoding';
+import { DirectSecp256k1HdWallet, DirectSecp256k1Wallet } from '@cosmjs/proto-signing';
+import { fromBase64, toBase64 } from '@cosmjs/encoding';
+import { Bip39, EnglishMnemonic, HdPath, Slip10, Slip10Curve } from '@cosmjs/crypto';
+import ow from 'ow';
 
 import { Ledger } from '@/domain';
 import { DEFAULT_ADDRESS_BECH_32_PREFIX, ENTRY_SUFFIX, ENTRY_TAG_SEPARATOR } from './Accounts';
-import { AlreadyExistsError, NotFoundError } from '@/exceptions';
+import { AlreadyExistsError, InvalidFormatError, NotFoundError } from '@/exceptions';
+import { makeCosmosDerivationPath } from '@/utils';
 
-import { Account, AccountBase, AccountType, AccountWithSigner } from '@/types';
+import {
+  Account,
+  AccountBase,
+  AccountType,
+  AccountWithSigner,
+  accountValidator,
+  accountWithMnemonicValidator,
+  accountWithPrivateKeyValidator,
+} from '@/types';
 
 /**
  * Abstract definition to be used on different KeystoreBackend implementations
@@ -17,9 +28,10 @@ export abstract class KeystoreBackend {
    * @param name - Name of the new account
    * @param type - ${@link AccountType} of the new account
    * @param mnemonic - Optional - Mnemonic of the account
+   * @param hdPath - Optional - HD path of the account, Defaults to 0/0/0/0
    * @returns Promise containing the newly created account data
    */
-  abstract add(name: string, type: AccountType, mnemonic?: string): Promise<Account>;
+  abstract add(name: string, type: AccountType, mnemonic?: string, hdPath?: HdPath): Promise<Account>;
 
   /**
    * Get a list of the accounts in the keystore, only getting their basic info
@@ -31,9 +43,10 @@ export abstract class KeystoreBackend {
    * Get a single account by name or address, including mnemonic
    *
    * @param nameOrAddress - Account name or account address to search by
+   * @param prefix - Optional - Bech 32 prefix for the address, defaults to 'archway'
    * @returns Promise containing the account's data and signer, or undefined if it doesn't exist
    */
-  abstract getWithSigner(nameOrAddress: string): Promise<AccountWithSigner | undefined>;
+  abstract getWithSigner(nameOrAddress: string, prefix: string): Promise<AccountWithSigner | undefined>;
 
   /**
    * Remove an account by name or address
@@ -67,10 +80,11 @@ export abstract class KeystoreBackend {
    * Get a single account by name or address
    *
    * @param nameOrAddress - Account name or account address to search by
+   * @param prefix - Optional - Bech 32 prefix for the address, defaults to 'archway'
    * @returns Promise containing the account's data, or undefined if it doesn't exist
    */
-  async get(nameOrAddress: string): Promise<Account | undefined> {
-    let found = await this.getWithSigner(nameOrAddress);
+  async get(nameOrAddress: string, prefix = DEFAULT_ADDRESS_BECH_32_PREFIX): Promise<Account | undefined> {
+    let found = await this.getWithSigner(nameOrAddress, prefix);
 
     if (found?.account) {
       const result: Account = {
@@ -87,12 +101,27 @@ export abstract class KeystoreBackend {
   }
 
   /**
+   * Convert a mnemonic into a single account private key. Derivation path can be passed as a parameter.
+   *
+   * @param mnemonic - Mnemonic to convert
+   * @param hdPath - Optional - Derivation path to get the account that will be extracted. Defaults to `m/44'/118'/0'/0/0`
+   * @param bip39Password - Optional - Password used to generate the seed
+   * @returns Promise containing the private key in base64 encoding
+   */
+  protected async convertMnemonicToPrivateKey(mnemonic: string, hdPath = makeCosmosDerivationPath(), bip39Password = ''): Promise<string> {
+    const seed = await Bip39.mnemonicToSeed(new EnglishMnemonic(mnemonic), bip39Password);
+    const { privkey } = Slip10.derivePath(Slip10Curve.Secp256k1, seed, hdPath);
+
+    return toBase64(privkey);
+  }
+
+  /**
    * Create a new {@link Account}, can be from ledger, or from mnemonic
    *
    * @param name - Account name
    * @param type - {@link AccountType} value
-   * @param mnemonic - Optional - Existing {@link Account} to be validated
-   * @param password - Optional - Password for serialization of the mnemonic
+   * @param mnemonicOrPrivateKey - Optional - Existing mnemonic or private key to use
+   * @param hdPath - Optional - HD path of the account, Defaults to 0/0/0/0
    * @param prefix - Optional - Bech 32 prefix for the generated address, defaults to 'archway'
    * @returns Promise containing the {@link Account}
    */
@@ -100,18 +129,26 @@ export abstract class KeystoreBackend {
   protected async createAccountObject(
     name: string,
     type: AccountType,
-    mnemonic?: string,
-    password?: string,
-    prefix = DEFAULT_ADDRESS_BECH_32_PREFIX
+    mnemonicOrPrivateKey?: string,
+    hdPath = makeCosmosDerivationPath(),
+    prefix = DEFAULT_ADDRESS_BECH_32_PREFIX,
   ): Promise<Account> {
     let result: Account;
 
     if (type === AccountType.LEDGER) {
       result = await Ledger.getAccount(name);
     } else {
-      const wallet = await (mnemonic ?
-        DirectSecp256k1HdWallet.fromMnemonic(mnemonic, { prefix }) :
-        DirectSecp256k1HdWallet.generate(24, { prefix }));
+      const hdWallet = await (mnemonicOrPrivateKey ?
+        (mnemonicOrPrivateKey.includes(' ') ?
+          DirectSecp256k1HdWallet.fromMnemonic(mnemonicOrPrivateKey, { prefix, hdPaths: [hdPath] }) :
+          undefined) :
+        DirectSecp256k1HdWallet.generate(24, { prefix, hdPaths: [hdPath] }));
+
+      const mnemonic = hdWallet?.mnemonic;
+
+      const privateKey = mnemonic ? await this.convertMnemonicToPrivateKey(mnemonic, hdPath) : mnemonicOrPrivateKey!;
+
+      const wallet = await DirectSecp256k1Wallet.fromKey(fromBase64(privateKey), prefix);
 
       const newAccount = (await wallet.getAccounts())[0];
 
@@ -123,7 +160,8 @@ export abstract class KeystoreBackend {
           key: toBase64(newAccount.pubkey),
         },
         type: AccountType.LOCAL,
-        mnemonic: await wallet.serialize(password || newAccount.address),
+        mnemonic,
+        privateKey,
       };
     }
 
@@ -132,6 +170,39 @@ export abstract class KeystoreBackend {
 
     return result;
   }
+
+  /**
+   * Verify if an object has the valid format of a {@link Account} (including the private key except for ledger accounts), throws error if not
+   *
+   * @param data - Object instance to validate
+   * @param name - Optional - Name of the account, will be used in the possible error
+   * @returns void
+   */
+  protected assertIsValidAccountWithPrivateKey = (data: unknown, name?: string): void => {
+    if (!this.isValidAccountWithPrivateKey(data)) throw new InvalidFormatError(name || 'Account');
+  };
+
+  /**
+   * Verify if an object has the valid format of a {@link Account} (including private key, except for ledger accounts)
+   *
+   * @param data - Object instance to validate
+   * @returns Boolean, whether it is valid or not
+   */
+  protected isValidAccountWithPrivateKey = (data: unknown): boolean => {
+    return (data as any).type === AccountType.LEDGER ?
+      ow.isValid(data, accountValidator) :
+      ow.isValid(data, accountWithPrivateKeyValidator);
+  };
+
+  /**
+   * Verify if an object has the valid format of a {@link Account} (including mnemonic, except for ledger accounts)
+   *
+   * @param data - Object instance to validate
+   * @returns Boolean, whether it is valid or not
+   */
+  protected isValidAccountWithMnemonic = (data: unknown): boolean => {
+    return (data as any).type === AccountType.LEDGER ? ow.isValid(data, accountValidator) : ow.isValid(data, accountWithMnemonicValidator);
+  };
 
   /**
    * Check if an account exists by name or address, if not found throws an error
