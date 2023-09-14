@@ -3,7 +3,7 @@ import { Args } from '@oclif/core';
 
 import { BaseCommand } from '@/lib/base';
 import { bold, greenBright, reset } from '@/utils';
-import { ChainRegistry, Config, DEFAULT_CONFIG_DATA } from '@/domain';
+import { ChainRegistry, Config } from '@/domain';
 import { GlobalFlag } from '@/parameters/flags';
 
 /**
@@ -19,6 +19,25 @@ export default class ConfigChainId extends BaseCommand<typeof ConfigChainId> {
   static flags = {
     global: GlobalFlag,
   };
+
+  static examples = [
+    {
+      description: 'Query the chain id in the local config',
+      command: '<%= config.bin %> <%= command.id %>',
+    },
+    {
+      description: 'Update the chain id in the local config',
+      command: '<%= config.bin %> <%= command.id %> constantine-3',
+    },
+    {
+      description: 'Query the chain id in the global config',
+      command: '<%= config.bin %> <%= command.id %> --global',
+    },
+    {
+      description: 'Update the chain id in the global config',
+      command: '<%= config.bin %> <%= command.id %> constantine-3 --global',
+    },
+  ];
 
   /**
    * Runs the command.
@@ -40,7 +59,7 @@ export default class ConfigChainId extends BaseCommand<typeof ConfigChainId> {
       await this.successMessage(chainId, global);
     } else {
       const currentValue = global ? configFile.globalConfigData['chain-id'] : configFile.localConfigData['chain-id'];
-      this.log(greenBright(currentValue || `Empty, defaults to: ${reset.bold(DEFAULT_CONFIG_DATA['chain-id'])}`));
+      this.log(greenBright(currentValue || `Empty, defaults to: ${reset.bold(configFile.configData['chain-id'])}`));
 
       if (this.jsonEnabled()) this.logJson({ 'chain-id': currentValue || '' });
     }
